@@ -1,0 +1,251 @@
+<!--
+ * @Description: In User Settings Edit
+ * @Author: your name
+ * @Date: 2019-07-01 16:56:35
+ * @LastEditTime: 2019-07-02 22:29:56
+ * @LastEditors: Please set LastEditors
+ -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+  <style>
+    #container {
+      text-align: center;
+
+    }
+
+    #content {
+      width: 640px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    #canvas {
+      position: absolute;
+    }
+
+    input {
+      vertical-align: middle;
+
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container">
+    <div id="content">
+      <canvas id="canvas"></canvas>
+      <video width="640" height="380" controls id="video">
+        <source src="https://flv2.bn.netease.com/videolib3/1709/07/ZPMlC6558/SD/ZPMlC6558-mobile.mp4" type="video/mp4">
+        <source src="ZPMlC6558-mobile.mp4" type="video/mp4">
+      </video>
+    </div>
+    <input type="text" id="text"> <button id="add">添加弹幕</button>
+    <input type="color" id="color">
+    <input type="range" max="40" min="20" id="range">
+
+  </div>
+  <script>
+    /***
+    /* speed:速度
+    /* time:表示出现的时间
+    ***/
+    let data = [
+      { value: '这个世界会好吗?', speed: 2, time: 0, color: 'red', fontSize: 20 },
+      { value: '雨女无瓜', speed: 2, time: 1 }]
+
+
+    /**
+     * 因为document.querySelectorAll是通过document这个对象去调用querySelectorAll的时候，
+
+    * 函数的环境变量里this会指向document，
+    * 假设querySelectorAll含有this的操作的话，那么this就会指代document。
+    * 而当你执行var select = document.querySelectorAll; 的时候，
+    * select所得到的是querySelector这个引用，但是此时如果直接通过select去调用的话，也就是select('span');
+    * 由于select（querySelectorAll）直接调用的话，this会自动指向window，所以就会出错。
+    
+    * bind的作用是，创建一个新函数，称为绑定函数。当调用这个绑定函数时，绑定函数会以创建它时传入 bind()方法的第一个参数作为 this，传入 bind() 方法的第二个以及以后的参数。 
+    * 而这句话var $ = document.querySelectorAll.bind(document);的效果相当于下面的代码
+    *   var $ = function(document) {
+    *   return function() {
+    *       return document.querySelectorAll.call(document, arguments);
+    *     }
+    *   }
+    */
+    let $ = document.querySelector.bind(document);
+
+    let canvas = $('#canvas');
+    let video = $('#video');
+    class Barrage {
+      constructor(obj, ctx) {
+        this.value = obj.value;
+        this.time = obj.time;
+        this.obj = obj;
+        this.ctx = ctx;
+      }
+      init() {
+        this.opacity = this.obj.opacity || this.ctx.opacity;
+        this.color = this.obj.color || this.ctx.color;
+        this.fontSize = this.obj.fontSize || this.ctx.fontSize;
+        this.speed = this.obj.speed || this.ctx.speed;
+
+        // 获取自己的宽度, 校验是否继续绘制
+        let span = document.createElement('span');
+        span.innerText = this.value;
+        span.style.font = `${this.fontSize}px "Micrsoft JhengHei"`;
+        span.style.position = 'absolute';
+        document.body.appendChild(span);
+
+        // 记录弹幕有多宽
+        this.width = span.clientWidth;
+        document.body.removeChild(span);
+
+        // 弹幕的出现位置
+        this.x = this.ctx.canvas.width;
+        this.y = this.ctx.canvas.height * Math.random();
+        if (this.y < this.fontSize) {
+          this.y = this.fontSize;
+        }
+        if (this.y > this.ctx.canvas.height - this.fontSize) {
+          this.y = this.ctx.canvas.height - this.fontSize;
+        }
+
+      }
+      render() {
+        // 渲染,再画在画布上
+        this.ctx.context.font = `${this.fontSize}px "Micrsoft JhengHei"`;
+        this.ctx.context.fillStyle = this.color;
+        this.ctx.context.fillText(this.value, this.x, this.y);
+      }
+
+    }
+
+    class CanvasBarrage {
+      constructor(canvas, video, options = {}) {
+        if (!canvas || !video) return;
+        this.canvas = canvas;
+        this.video = video;
+        // 弹幕默认值
+        let defaultOptions = {
+          fontSize: 20,
+          color: 'gold',
+          speed: 2,
+          opacity: .3,
+          data: []
+        }
+        // 对象合并 将属性全部挂载在实例上
+        Object.assign(this, defaultOptions, options);
+        // 获取canvas画布
+        this.context = canvas.getContext('2d');
+        // 设置canvas 宽高
+        this.canvas.width = video.clientWidth;
+        this.canvas.height = video.clientHeight;
+        // 是否暂停
+        this.isPaused = true; // 默认暂停播放,表示不渲染弹幕
+        // 存放所有弹幕 , Barrage 是创建弹幕的实例的类
+        this.barrage = this.data.map(obj => new Barrage(obj, this));
+        // 渲染所有弹幕
+        this.render();
+      }
+      renderBarrage() {
+        // 将数组中的弹幕一一取出, 判断时间和视频的时间相等,就渲染
+        let time = this.video.currentTime;
+        this.barrage.forEach(barrage => {
+          if (!barrage.flag && time >= barrage.time) {
+            // 先初始化 再绘制
+            // 1. 如果没有初始化 先初始一下
+            if (!barrage.isInited) {
+              barrage.init();
+              barrage.isInited = true;
+            }
+            barrage.x -= barrage.speed;
+            barrage.render();
+            if (barrage.x <= barrage.width * -1) {
+              barrage.flag = true; // 停止渲染的标记
+            }
+          }
+
+        })
+
+      }
+      render() {
+        // 第一次 先清空操作, 执行渲染弹幕,如果没有 暂停继续渲染
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.renderBarrage(); // 渲染弹幕
+        if (this.isPaused === false) {
+          // 递归渲染
+          requestAnimationFrame(this.render.bind(this));
+        }
+      }
+      add(obj) {
+        this.barrage.push(new Barrage(obj, this));
+      }
+      reset() {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        let time = this.video.currentTime;
+        this.barrage.forEach(barrage => {
+          barrage.flag = false;
+          if (time <= barrage.time) {
+            barrage.isInited = false; // 重新初始化
+          } else {
+            barrage.flag = true; // 其他弹幕不再渲染
+          }
+        });
+      }
+
+    }
+
+
+    let canvasBarrage;// = new CanvasBarrage(canvas, video, { data });
+
+    // 建立WebSocket 连接
+    let socket = new WebSocket('ws://localhost:3000');
+    socket.onopen = function () {
+      socket.onmessage = function (e) {
+        let message = JSON.parse(e.data);
+        if (message.type === 'INIT') {
+          canvasBarrage = new CanvasBarrage(canvas, video, { data: message.data })
+        }
+        if (message.type === 'ADD') {
+          canvasBarrage.add(message.data);
+        }
+      }
+    }
+
+    // 播放
+    video.addEventListener('play', function () {
+      canvasBarrage.isPaused = false;
+      canvasBarrage.render();
+    });
+    // 暂停
+    video.addEventListener('pause', function () {
+      canvasBarrage.isPaused = true;
+    });
+
+    // 拖动
+    video.addEventListener('seeked', function () {
+      canvasBarrage.reset();
+    })
+
+    // 添加弹幕
+    $('#add').addEventListener('click', function () {
+      let value = $('#text').value;
+      let time = video.currentTime;
+      let color = $('#color').value;
+      let fontSize = $('#range').value;
+      let obj = { time, value, color, fontSize };
+      // canvasBarrage.add(obj);
+      socket.send(JSON.stringify(obj));
+    });
+
+
+  </script>
+
+</body>
+
+</html>
